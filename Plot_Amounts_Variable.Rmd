@@ -1,0 +1,85 @@
+---
+title: "Amounts"
+author: "Matthew J. Martinez"
+date: "September 16, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(plotly)
+knitr::opts_chunk$set(echo = TRUE)
+#path<-"C:/Users/mjmpo/Dropbox/Consulting/Project_Child/Data" #Windows Laptop
+path<-"C:/Users/matthew/Dropbox/Consulting/Project_Child/Data" #Home Computer
+sf<-read.csv(paste0(path, "/SFY10_Admin_dollars.csv"), stringsAsFactors = F)
+```
+
+## Amount By Month
+Below find the amount of expenditures/income by month.
+
+```{r pressure, echo=FALSE}
+#Prepare to Label Months
+month_list<-data.frame(c("January", "February", "March", "Apirl", "May", "June", "July", "August","September", "October", "November", "December"))
+month_list[,1]<-as.character(month_list[,1])
+month_list$month_num<-seq.int(nrow(month_list))
+
+#Create Subsets of the Data
+sfm_u<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount>=0))
+sfm_l<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount<=0))
+
+#Calculate Means
+mean_u<-round(mean(sfm_u$Amount), 2)
+mean_l<-round(mean(sfm_l$Amount), 2)
+
+months<-unique(sfm_u$Fiscal.Month)
+means_u<-data.frame(Amount=integer(), Month=integer())
+for(x in 1:length(months)){
+  eval(parse(text = paste0('month<-subset(sfm_u, sfm_u$Fiscal.Month==x)')))
+  eval(parse(text = paste0('mean<-data.frame(round(mean(month$Amount),0),x)')))
+  mean<-plyr::rename(mean, c(round.mean.month.Amount...0.="Amount", x="Month"))
+  means_u<-rbind(means_u, mean)
+}
+means_u$Month<-ifelse(as.character(means_u$Month) %in% month_list[,2], month_list[,1], 0)
+plot_ly(x=means_u$Month, y=means_u$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
+
+means_l<-data.frame(Amount=integer(), Month=integer())
+for(x in 1:length(months)){
+  eval(parse(text = paste0('month<-subset(sfm_l, sfm_l$Fiscal.Month==x)')))
+  eval(parse(text = paste0('mean<-data.frame(round(mean(month$Amount),0),x)')))
+  mean<-plyr::rename(mean, c(round.mean.month.Amount...0.="Amount", x="Month"))
+  means_l<-rbind(means_l, mean)
+}
+means_l$Month<-ifelse(as.character(means_l$Month) %in% month_list[,2], month_list[,1], 0)
+plot_ly(x=means_l$Month, y=means_l$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
+
+#Test The Table Function in Plotly
+headerValues<-list()
+for(i in 0:(ncol(means_l))){
+  name<-names(means_l)[i]
+  headerValues[i]<-name
+}
+headerValues<-append(headerValues, "<b>Month Number</b>", after=0)
+
+cellValues<-list()
+for(i in (0:ncol(means_l))){
+  row<-means_l[i]
+  cellValues[i]<-row
+}
+cellValues<-append(cellValues, list(rownames(means_l)), after=0)
+
+plot_ly(type="table", 
+        header=list(values=headerValues,
+          align=c('left', rep('center', ncol(means_l))),
+          line= list(width=1, color='black'),
+          fill=list(color='rgb(96, 122, 165)'),
+          font=list(family="Arial", size=14, color="black")
+          ),
+        cells=list(
+          values=cellValues,
+          align=c('left', rep('center', ncol(means_l))),
+          line=list(color="black", width=1),
+          fill=list(color=c('rgb(127, 162, 219)', 'rgba(127, 162, 219, 0.3)')),
+          font=list(family="Arial", size=12, color=c("black"))
+        ))
+
+```
+
