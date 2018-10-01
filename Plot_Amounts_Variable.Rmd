@@ -6,6 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+library(plyr)
 sumby<- function(x,y){
   suppressMessages(tryCatch({
   y1<-deparse(substitute(y))
@@ -25,8 +26,6 @@ sumby<- function(x,y){
   df
 }
 
-
-library(plotly)
 knitr::opts_chunk$set(echo = TRUE)
 #path<-"C:/Users/mjmpo/Dropbox/Consulting/Project_Child/Data" #Windows Laptop
 path<-"C:/Users/matthew/Dropbox/Consulting/Project_Child/Data" #Home Computer
@@ -55,22 +54,6 @@ month_list$month_num<-seq.int(nrow(month_list))
   mean_u<-round(mean(sfm_u$Amount), 2)
   mean_l<-round(mean(sfm_l$Amount), 2)
 
-#Transform 'Amount' to have a mean of 0 and a std of 1. Useful for creating standard dev. charts
-  library(caret)
-  means_u$Amount2<-means_u$Amount
-  t_amount_u<-caret::preProcess(means_u[,c(1,3)], method=c("center", "scale"))
-  u_transformed<-predict(t_amount_u, means_u[,c(1,3)])
-  means_u<-cbind(means_u, u_transformed[,1])
-  colnames(means_u)[4] <- c("Amount_sd")
-  rm(t_amount_u, u_transformed)
-  
-  means_l$Amount2<-means_l$Amount
-  t_amount_l<-caret::preProcess(means_l[,c(1,3)], method=c("center", "scale"))
-  l_transformed<-predict(t_amount_l, means_l[,c(1:3)])
-  means_l<-cbind(means_l, l_transformed[,1])
-  colnames(means_l)[4]<-c("Amount_sd")
-  rm(t_amount_l, l_transformed)
-  
 #Calculate Confidence Intervals and Standard Error
   conf<-sfm_u[,c("Amount", "Fiscal.Month")]
   library(dplyr)
@@ -80,6 +63,8 @@ month_list$month_num<-seq.int(nrow(month_list))
   conf_u<-merge(conf_u, conf2, by="Fiscal.Month")
   conf_u$std_error<-round(conf_u$sd/sqrt(conf_u$counter), 2)
   conf_u<-merge(conf_u, month_list, by.x="Fiscal.Month", by.y="month_num")
+  low_conf_int_u<-(conf_u$mean - 1.960 * ((conf_u$sd)/sqrt(conf_u$counter)))
+  high_conf_int_u<-(conf_u$mean + 1.960 * ((conf_u$sd)/sqrt(conf_u$counter)))
 
   conf<-sfm_l[,c("Amount", "Fiscal.Month")]
   conf2<- conf %>% group_by(Fiscal.Month) %>% summarise_each(funs(mean(.,na.rm=T), sd(., na.rm = T)))
@@ -88,6 +73,7 @@ month_list$month_num<-seq.int(nrow(month_list))
   conf_l<-merge(conf_l, conf2, by="Fiscal.Month")
   conf_l$std_error<-round(conf_l$sd/sqrt(conf_l$counter), 2)
   conf_l<-merge(conf_l, month_list, by.x="Fiscal.Month", by.y="month_num")
+  detach("package:dplyr", unload=T)
   
 #Create Schema for Plotting Above and Below Average Times
   cols_outline<-c('rgba(55,128,191,1)', 'rgba(219,64,82,1)')[(conf_u$Amount > mean_u) + 1]
@@ -111,49 +97,52 @@ month_list$month_num<-seq.int(nrow(month_list))
     labs2<-"Below Average Amount"
   }
 
-plot_ly(x=means_u$Month, y=means_u$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
+library(plotly)
+library(crosstalk)
+library(DT)
+library(shiny)
+
+plot_ly(x=conf_u$Month, y=conf_u$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
 
 axis_template_x=list(showgrid=F, title="Months", tickangle=-45)
 axis_template_y=list(showgrid=T, title="Average Income in Dollars")
 
-plot_ly(conf_u, x=~Month, y=mean_u, type='scatter', mode='lines', name="Average Amount (Income)", line=list(color='rgb(58,220,225)'), showlegend=F, hoverinfo='text', text="") %>% 
-  add_trace(y=~mean, type="bar", marker=list(color=cols_fill, line=list(color=cols_outline, width=2)), showlegend=F,
-            error_y=~list(type="data", symmetric=F, array(conf_u$std_error), arrayminus(conf_u$std_error)), color='rgb(65,105,225)', hoverinfo='text', text=paste0(conf_u$mean, " +/-", conf_u$std_error)) %>%
+plot_ly(conf_u, x=~Month, y=mean_u, error_x=list(type="conf_u", symetric=F, arrayminus=low_conf_int_u, array=high_conf_int_u), type='scatter', mode='lines', name="Average Amount (Income)", line=list(color='rgb(58,220,225)'), showlegend=F, hoverinfo='text', text="") %>% 
+  add_trace(y=~mean, type="bar", marker=list(color=cols_fill, line=list(color=cols_outline, width=2)), showlegend=F, error_y=~list(type="data", symmetric=F, array=(conf_u$std_error), arrayminus=(conf_u$std_error)), color='rgb(65,105,225)', hoverinfo='text', text=paste0(conf_u$mean, " +/-", conf_u$std_error)) %>%
   layout(title=paste0("Average Income By Month"), xaxis=axis_template_x, yaxis=axis_template_y, margin=list(b=160), autosize=T, width=840)
   
 
-
-plot_ly(x=means_l$Month, y=means_l$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
+#plot_ly(x=means_l$Month, y=means_l$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
 
 #Test The Table Function in Plotly
 headerValues<-list()
-for(i in 0:(ncol(means_l))){
-  name<-names(means_l)[i]
+for(i in 0:(ncol(conf_u))){
+  name<-names(conf_u)[i]
   headerValues[i]<-name
 }
 headerValues<-append(headerValues, "<b>Month Number</b>", after=0)
 
 cellValues<-list()
-for(i in (0:ncol(means_l))){
-  row<-means_l[i]
+for(i in (0:ncol(conf_u))){
+  row<-conf_u[i]
   cellValues[i]<-row
 }
-cellValues<-append(cellValues, list(rownames(means_l)), after=0)
+cellValues<-append(cellValues, list(rownames(conf_u)), after=0)
 
-plot_ly(type="table", 
-        header=list(values=headerValues,
-          align=c('left', rep('center', ncol(means_l))),
-          line= list(width=1, color='black'),
-          fill=list(color='rgb(96, 122, 165)'),
-          font=list(family="Arial", size=14, color="black")
-          ),
-        cells=list(
-          values=cellValues,
-          align=c('left', rep('center', ncol(means_l))),
-          line=list(color="black", width=1),
-          fill=list(color=c('rgb(127, 162, 219)', 'rgba(127, 162, 219, 0.3)')),
-          font=list(family="Arial", size=12, color=c("black"))
-        ))
+#plot_ly(type="table", 
+#        header=list(values=headerValues,
+#          align=c('left', rep('center', ncol(conf_u))),
+#          line= list(width=1, color='black'),
+#          fill=list(color='rgb(96, 122, 165)'),
+#          font=list(family="Arial", size=14, color="black")
+#          ),
+#        cells=list(
+#          values=cellValues,
+#          align=c('left', rep('center', ncol(conf_u))),
+#          line=list(color="black", width=1),
+#          fill=list(color=c('rgb(127, 162, 219)', 'rgba(127, 162, 219, 0.3)')),
+#          font=list(family="Arial", size=12, color=c("black"))
+#        ))
 
 ```
 
