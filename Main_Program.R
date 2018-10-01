@@ -1,4 +1,5 @@
 path<-"C:/Users/mjmpo/Dropbox/Consulting/Project_Child/Data"
+path<-"C:/Users/matthew/Dropbox/Consulting/Project_Child/Data" #Home Computer
 sf<-read.csv(paste0(path, "/SFY10_Admin_dollars.csv"))
 names(sf)
 
@@ -7,10 +8,12 @@ table(Biennium) #All Single Year
 table(Fiscal.Month)  #What Will we do about 99's? What do these mean?
 table(Expenditure.Authority.Index)  #There are 5 Expenditure Authority Indecies
 table(Program.Index.Title) #One to One Correspondence with Program.Index
+length(unique(Program.Index.Title))
 #table(Program.Index)
 #t<-table(Program.Index, Program.Index.Title) 
 #View(t)
 table(Subobject.Title) #One to One Correspondence with Subobject
+length(unique(Subobject.Title))
 #table(Subobject)
 #t<-table(Subobject, Subobject.Title)
 #View(t)

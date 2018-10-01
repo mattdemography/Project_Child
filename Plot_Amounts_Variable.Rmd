@@ -6,6 +6,26 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+sumby<- function(x,y){
+  suppressMessages(tryCatch({
+  y1<-deparse(substitute(y))
+  y2<-unlist((strsplit(as.character(y1), "[$]")))[2]
+  myvars<-"y"
+  nrows<-length(x)
+  df<-data.frame(x=numeric(), y=numeric())
+  df<-plyr::rename(df, c(x=y2, y=y))
+  for(i in 1:nrows){
+    x2<-(colnames(x[i]))
+    t<-(tapply(x[,i], INDEX=list(y), FUN=sum, na.rm=T))
+    df2<-data.frame(x=names(t), y=t)
+    df2<-plyr::rename(df2, c(x=y2, y=x2))
+    df<-merge(df, df2, by=y2, all=T, accumulate=T)
+    df<-df[!names(df) %in% myvars]
+  }}, error=function(e){cat(conditionMessage(e))}))
+  df
+}
+
+
 library(plotly)
 knitr::opts_chunk$set(echo = TRUE)
 #path<-"C:/Users/mjmpo/Dropbox/Consulting/Project_Child/Data" #Windows Laptop
@@ -20,35 +40,89 @@ Below find the amount of expenditures/income by month.
 #Prepare to Label Months
 month_list<-data.frame(c("January", "February", "March", "Apirl", "May", "June", "July", "August","September", "October", "November", "December"))
 month_list[,1]<-as.character(month_list[,1])
+colnames(month_list)[1] <-c("Month")
 month_list$month_num<-seq.int(nrow(month_list))
 
 #Create Subsets of the Data
-sfm_u<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount>=0))
-sfm_l<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount<=0))
+  sfm_u<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount>=0))
+  sfm_l<-subset(sf, (sf$Fiscal.Month!=99 & sf$Amount<=0))
+  
+#Add Counter Variable For Calculations to Each Dataset
+  sfm_u$counter<-1
+  sfm_l$counter<-1
 
 #Calculate Means
-mean_u<-round(mean(sfm_u$Amount), 2)
-mean_l<-round(mean(sfm_l$Amount), 2)
+  mean_u<-round(mean(sfm_u$Amount), 2)
+  mean_l<-round(mean(sfm_l$Amount), 2)
 
-months<-unique(sfm_u$Fiscal.Month)
-means_u<-data.frame(Amount=integer(), Month=integer())
-for(x in 1:length(months)){
-  eval(parse(text = paste0('month<-subset(sfm_u, sfm_u$Fiscal.Month==x)')))
-  eval(parse(text = paste0('mean<-data.frame(round(mean(month$Amount),0),x)')))
-  mean<-plyr::rename(mean, c(round.mean.month.Amount...0.="Amount", x="Month"))
-  means_u<-rbind(means_u, mean)
-}
-means_u$Month<-ifelse(as.character(means_u$Month) %in% month_list[,2], month_list[,1], 0)
+#Transform 'Amount' to have a mean of 0 and a std of 1. Useful for creating standard dev. charts
+  library(caret)
+  means_u$Amount2<-means_u$Amount
+  t_amount_u<-caret::preProcess(means_u[,c(1,3)], method=c("center", "scale"))
+  u_transformed<-predict(t_amount_u, means_u[,c(1,3)])
+  means_u<-cbind(means_u, u_transformed[,1])
+  colnames(means_u)[4] <- c("Amount_sd")
+  rm(t_amount_u, u_transformed)
+  
+  means_l$Amount2<-means_l$Amount
+  t_amount_l<-caret::preProcess(means_l[,c(1,3)], method=c("center", "scale"))
+  l_transformed<-predict(t_amount_l, means_l[,c(1:3)])
+  means_l<-cbind(means_l, l_transformed[,1])
+  colnames(means_l)[4]<-c("Amount_sd")
+  rm(t_amount_l, l_transformed)
+  
+#Calculate Confidence Intervals and Standard Error
+  conf<-sfm_u[,c("Amount", "Fiscal.Month")]
+  library(dplyr)
+  conf2<- conf %>% group_by(Fiscal.Month) %>% summarise_each(funs(mean(.,na.rm=T), sd(., na.rm = T)))
+  conf_u<-sumby(sfm_u[,c("counter", "Amount")], sfm_u$Fiscal.Month)
+  conf_u$total_amount<-round(conf_u$Amount, 2)
+  conf_u<-merge(conf_u, conf2, by="Fiscal.Month")
+  conf_u$std_error<-round(conf_u$sd/sqrt(conf_u$counter), 2)
+  conf_u<-merge(conf_u, month_list, by.x="Fiscal.Month", by.y="month_num")
+
+  conf<-sfm_l[,c("Amount", "Fiscal.Month")]
+  conf2<- conf %>% group_by(Fiscal.Month) %>% summarise_each(funs(mean(.,na.rm=T), sd(., na.rm = T)))
+  conf_l<-sumby(sfm_l[,c("counter", "Amount")], sfm_l$Fiscal.Month)
+  conf_l$total_amount<-round(conf_l$Amount, 2)
+  conf_l<-merge(conf_l, conf2, by="Fiscal.Month")
+  conf_l$std_error<-round(conf_l$sd/sqrt(conf_l$counter), 2)
+  conf_l<-merge(conf_l, month_list, by.x="Fiscal.Month", by.y="month_num")
+  
+#Create Schema for Plotting Above and Below Average Times
+  cols_outline<-c('rgba(55,128,191,1)', 'rgba(219,64,82,1)')[(conf_u$Amount > mean_u) + 1]
+  cols_fill<-c('rgba(55,128,191,0.7)', 'rgba(219,64,82,0.7)')[(conf_u$Amount > mean_u) + 1]
+  if(cols_fill[1]=='rgba(55,128,191,0.7)'){
+    labs1<-"Below Average Amount"
+    labs2<-"Above Average Amount"
+  }else{
+    labs1<-"Above Average Amount"
+    labs2<-"Below Average Amount"
+  }
+  
+#Create Schema for Plotting Above and Below Average Times - Standard Devaition Scale
+  cols_outline_sd_scale<-c('rgba(55,128,191,1)', 'rgba(219,64,82,1)')[(abs(conf_u$sd) >1) + 1]
+  cols_fill_sd_scale<-c('rgba(55,128,191,0.7)', 'rgba(219,64,82,0.7)')[(abs(conf_u$sd) >1) + 1]
+  if(cols_fill[1]=='rgba(55,128,191,0.7)'){
+    labs1<-"Below Average Amount"
+    labs2<-"Above Average Amount"
+  }else{
+    labs1<-"Above Average Amount"
+    labs2<-"Below Average Amount"
+  }
+
 plot_ly(x=means_u$Month, y=means_u$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
 
-means_l<-data.frame(Amount=integer(), Month=integer())
-for(x in 1:length(months)){
-  eval(parse(text = paste0('month<-subset(sfm_l, sfm_l$Fiscal.Month==x)')))
-  eval(parse(text = paste0('mean<-data.frame(round(mean(month$Amount),0),x)')))
-  mean<-plyr::rename(mean, c(round.mean.month.Amount...0.="Amount", x="Month"))
-  means_l<-rbind(means_l, mean)
-}
-means_l$Month<-ifelse(as.character(means_l$Month) %in% month_list[,2], month_list[,1], 0)
+axis_template_x=list(showgrid=F, title="Months", tickangle=-45)
+axis_template_y=list(showgrid=T, title="Average Income in Dollars")
+
+plot_ly(conf_u, x=~Month, y=mean_u, type='scatter', mode='lines', name="Average Amount (Income)", line=list(color='rgb(58,220,225)'), showlegend=F, hoverinfo='text', text="") %>% 
+  add_trace(y=~mean, type="bar", marker=list(color=cols_fill, line=list(color=cols_outline, width=2)), showlegend=F,
+            error_y=~list(type="data", symmetric=F, array(conf_u$std_error), arrayminus(conf_u$std_error)), color='rgb(65,105,225)', hoverinfo='text', text=paste0(conf_u$mean, " +/-", conf_u$std_error)) %>%
+  layout(title=paste0("Average Income By Month"), xaxis=axis_template_x, yaxis=axis_template_y, margin=list(b=160), autosize=T, width=840)
+  
+
+
 plot_ly(x=means_l$Month, y=means_l$Amount, type="bar") %>% layout(xaxis=list(categoryorder="array", categoryarray=as.character(month_list[,1])))
 
 #Test The Table Function in Plotly
